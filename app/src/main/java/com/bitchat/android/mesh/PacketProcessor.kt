@@ -46,6 +46,9 @@ class PacketProcessor(private val myPeerID: String) {
         capacity = Channel.UNLIMITED
     ) {
         Log.d(TAG, "🎭 Created packet actor for peer: ${formatPeerForLog(peerID)}")
+        // Track actor creation time for cleanup purposes
+        actorCreationTimes[peerID] = System.currentTimeMillis()
+        
         try {
             for (packet in channel) {
                 Log.d(TAG, "📦 Processing packet type ${packet.packet.type} from ${formatPeerForLog(peerID)} (serialized)")
@@ -54,15 +57,21 @@ class PacketProcessor(private val myPeerID: String) {
             }
         } finally {
             Log.d(TAG, "🎭 Packet actor for ${formatPeerForLog(peerID)} terminated")
+            actorCreationTimes.remove(peerID)
         }
     }
     
     // Cache actors to reuse them
     private val actors = mutableMapOf<String, kotlinx.coroutines.channels.SendChannel<RoutedPacket>>()
     
+    // Track actor lifecycle for proper cleanup
+    private val actorCreationTimes = mutableMapOf<String, Long>()
+    
     init {
         // Set up the packet relay manager delegate immediately
         setupRelayManager()
+        // Start periodic cleanup of idle actors
+        startPeriodicActorCleanup()
     }
     
     /**
@@ -269,10 +278,65 @@ class PacketProcessor(private val myPeerID: String) {
             
             if (actors.isNotEmpty()) {
                 appendLine("Peer Actors:")
+                val now = System.currentTimeMillis()
                 actors.keys.forEach { peerID ->
-                    appendLine("  - $peerID")
+                    val creationTime = actorCreationTimes[peerID]
+                    val ageSeconds = if (creationTime != null) (now - creationTime) / 1000 else "unknown"
+                    appendLine("  - $peerID (age: ${ageSeconds}s)")
                 }
             }
+        }
+    }
+    
+    /**
+     * Clean up actor for a specific peer when the peer disconnects or is removed
+     * This prevents memory leaks from accumulating actors for stale peers
+     */
+    fun cleanupActorForPeer(peerID: String) {
+        actors[peerID]?.let { actor ->
+            Log.d(TAG, "🧹 Cleaning up actor for disconnected peer: ${formatPeerForLog(peerID)}")
+            actor.close()
+            actors.remove(peerID)
+            actorCreationTimes.remove(peerID)
+        }
+    }
+    
+    /**
+     * Start periodic cleanup of idle actors to prevent memory leaks
+     * Removes actors for peers that haven't been active for a while
+     */
+    private fun startPeriodicActorCleanup() {
+        processorScope.launch {
+            while (isActive) {
+                delay(300000L) // 5 minutes
+                cleanupIdleActors()
+            }
+        }
+    }
+    
+    /**
+     * Clean up actors for peers that haven't been seen in a while
+     * This is a safety mechanism to prevent memory leaks from stale actors
+     */
+    private fun cleanupIdleActors() {
+        val now = System.currentTimeMillis()
+        val staleActorThreshold = 600000L // 10 minutes
+        
+        val stalePeers = actorCreationTimes.entries.filter { (_, creationTime) ->
+            now - creationTime > staleActorThreshold
+        }.map { it.key }
+        
+        stalePeers.forEach { peerID ->
+            // Double-check if the peer is still active via delegate
+            val isStillActive = delegate?.getPeerNickname(peerID) != null
+            if (!isStillActive) {
+                Log.d(TAG, "🧹 Cleaning up stale actor for inactive peer: ${formatPeerForLog(peerID)}")
+                cleanupActorForPeer(peerID)
+            }
+        }
+        
+        if (stalePeers.isNotEmpty()) {
+            Log.d(TAG, "Cleaned up ${stalePeers.size} stale peer actors")
         }
     }
     

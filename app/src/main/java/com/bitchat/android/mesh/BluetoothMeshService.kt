@@ -166,6 +166,9 @@ class BluetoothMeshService(private val context: Context) {
             }
             
             override fun removePeer(peerID: String) {
+                // Clean up the PacketProcessor actor for this peer to prevent memory leaks
+                packetProcessor.cleanupActorForPeer(peerID)
+                // Remove peer from PeerManager
                 peerManager.removePeer(peerID)
             }
             
