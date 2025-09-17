@@ -11,12 +11,11 @@ import com.bitchat.android.mesh.BluetoothMeshService
 import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.model.BitchatMessageType
 import com.bitchat.android.protocol.BitchatPacket
-
-
 import kotlinx.coroutines.launch
+
 import com.bitchat.android.util.NotificationIntervalManager
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.bitchat.android.cashu.CashuActions
 import java.util.Date
 import kotlin.random.Random
 
@@ -137,6 +136,8 @@ class ChatViewModel(
     val geohashPeople: LiveData<List<GeoPerson>> = state.geohashPeople
     val teleportedGeo: LiveData<Set<String>> = state.teleportedGeo
     val geohashParticipantCounts: LiveData<Map<String, Int>> = state.geohashParticipantCounts
+    val showWalletSheet: LiveData<Boolean> = state.showWalletSheet
+    val pendingCashuLockLabel: LiveData<String?> = state.pendingCashuLockLabel
 
     init {
         // Note: Mesh service delegate is now set by MainActivity
@@ -247,6 +248,49 @@ class ChatViewModel(
     override fun onCleared() {
         super.onCleared()
         // Note: Mesh service lifecycle is now managed by MainActivity
+    }
+
+    // MARK: - Cashu Management
+
+    // --- Cashu integration: lightweight commands ---
+    fun setDefaultCashuMint(url: String, onResult: (Boolean, String) -> Unit) {
+        CashuActions.setDefaultMint(getApplication(), url, viewModelScope) { ok, msg ->
+            onResult(ok, msg)
+        }
+    }
+
+    fun getCashuBalance(onResult: (ULong?, String?) -> Unit) {
+        CashuActions.currentBalance(getApplication(), viewModelScope) { bal, err ->
+            onResult(bal, err)
+        }
+    }
+
+    fun sendCashuToken(amountSat: ULong, memo: String?, onResult: (String?, String?) -> Unit) {
+        // Optionally lock to a pubkey if context wants it; default null
+        val lockTo = state.getPendingCashuLockPubkey()
+        CashuActions.sendToken(getApplication(), amountSat, memo, viewModelScope, lockToPubkey = lockTo) { token, err ->
+            // Clear after use
+            state.setPendingCashuLockPubkey(null)
+            onResult(token, err)
+        }
+    }
+
+    fun receiveCashuToken(token: String, onResult: (ULong?, String?) -> Unit) {
+        // If we are in a geohash chat, pass the derived Nostr private key for that geohash.
+        // If in mesh (Bluetooth) chat, pass nothing.
+        val privHex: String? = try {
+            when (val sel = state.selectedLocationChannel.value) {
+                is com.bitchat.android.geohash.ChannelID.Location -> {
+                    val gh = sel.channel.geohash
+                    val id = com.bitchat.android.nostr.NostrIdentityBridge.deriveIdentity(gh, getApplication())
+                    id.privateKeyHex
+                }
+                else -> null
+            }
+        } catch (_: Exception) { null }
+        CashuActions.receiveToken(getApplication(), token, viewModelScope, nostrPrivkeyHex = privHex) { credited, err ->
+            onResult(credited, err)
+        }
     }
     
     // MARK: - Nickname Management
@@ -950,6 +994,11 @@ class ChatViewModel(
     /**
      * Get consistent color for a Nostr pubkey (iOS-compatible)
      */
+    // Wallet sheet control
+    fun setShowWalletSheet(show: Boolean) { state.setShowWalletSheet(show) }
+    fun setPendingCashuLockPubkey(pubkeyHex: String?) { state.setPendingCashuLockPubkey(pubkeyHex) }
+    fun setPendingCashuLockLabel(label: String?) { state.setPendingCashuLockLabel(label) }
+
     fun colorForNostrPubkey(pubkeyHex: String, isDark: Boolean): androidx.compose.ui.graphics.Color {
         return geohashViewModel.colorForNostrPubkey(pubkeyHex, isDark)
     }

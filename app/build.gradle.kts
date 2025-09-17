@@ -103,8 +103,12 @@ dependencies {
 
     // Security preferences
     implementation(libs.androidx.security.crypto)
+
+    // CDK-kotlin
+    implementation("io.github.thesimplekid:cdk-kotlin:0.0.2-test")
     
     // Testing
+
     testImplementation(libs.bundles.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.bundles.compose.testing)

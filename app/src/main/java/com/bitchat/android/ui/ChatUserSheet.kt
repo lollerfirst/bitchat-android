@@ -14,11 +14,10 @@ import androidx.compose.ui.unit.sp
 import com.bitchat.android.ui.theme.BASE_FONT_SIZE
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import kotlinx.coroutines.launch
 import com.bitchat.android.model.BitchatMessage
 
 /**
- * User Action Sheet for selecting actions on a specific user (slap, hug, block)
+ * User Action Sheet for selecting actions on a specific user (slap, hug, block, send bitcoin)
  * Design language matches LocationChannelsSheet.kt for consistency
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,7 +30,6 @@ fun ChatUserSheet(
     viewModel: ChatViewModel,
     modifier: Modifier = Modifier
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     
     // Bottom sheet state
@@ -87,7 +85,6 @@ fun ChatUserSheet(
                                 subtitle = "copy this message to clipboard",
                                 titleColor = standardGrey,
                                 onClick = {
-                                    // Copy the message content to clipboard
                                     clipboardManager.setText(AnnotatedString(message.content))
                                     onDismiss()
                                 }
@@ -104,8 +101,42 @@ fun ChatUserSheet(
                                 subtitle = "send a playful slap message",
                                 titleColor = standardBlue,
                                 onClick = {
-                                    // Send slap command
                                     viewModel.sendMessage("/slap $targetNickname")
+                                    onDismiss()
+                                }
+                            )
+                        }
+
+                        // Send bitcoin (Cashu)
+                        item {
+                            UserActionRow(
+                                title = "send bitcoin",
+                                subtitle = "tip this user with bitcoin only they can claim",
+                                titleColor = standardGreen,
+                                onClick = {
+                                    try {
+                                        val selectedLocationChannel = viewModel.selectedLocationChannel.value
+                                        if (selectedLocationChannel is com.bitchat.android.geohash.ChannelID.Location) {
+                                            val gh = selectedLocationChannel.channel.geohash
+                                            val pubkeyHex = viewModel.geohashViewModel.findPubkeyByNickname(targetNickname)
+                                            if (pubkeyHex != null) {
+                                                viewModel.setPendingCashuLockPubkey(pubkeyHex)
+                                                viewModel.setPendingCashuLockLabel("$targetNickname@$gh")
+                                                viewModel.setShowWalletSheet(true)
+                                            } else {
+                                                viewModel.sendMessage("system: can't find pubkey for @$targetNickname in #$gh")
+                                            }
+                                        } else {
+                                            // Not in geohash - open wallet without lock
+                                            viewModel.setPendingCashuLockPubkey(null)
+                                            viewModel.setPendingCashuLockLabel(null)
+                                            viewModel.setShowWalletSheet(true)
+                                        }
+                                    } catch (_: Exception) {
+                                        viewModel.setPendingCashuLockPubkey(null)
+                                        viewModel.setPendingCashuLockLabel(null)
+                                        viewModel.setShowWalletSheet(true)
+                                    }
                                     onDismiss()
                                 }
                             )
@@ -118,7 +149,6 @@ fun ChatUserSheet(
                                 subtitle = "send a friendly hug message",
                                 titleColor = standardGreen,
                                 onClick = {
-                                    // Send hug command
                                     viewModel.sendMessage("/hug $targetNickname")
                                     onDismiss()
                                 }
@@ -132,13 +162,10 @@ fun ChatUserSheet(
                                 subtitle = "block all messages from this user",
                                 titleColor = standardRed,
                                 onClick = {
-                                    // Check if we're in a geohash channel
                                     val selectedLocationChannel = viewModel.selectedLocationChannel.value
                                     if (selectedLocationChannel is com.bitchat.android.geohash.ChannelID.Location) {
-                                        // Get user's nostr public key and add to geohash block list
                                         viewModel.blockUserInGeohash(targetNickname)
                                     } else {
-                                        // Regular mesh blocking
                                         viewModel.sendMessage("/block $targetNickname")
                                     }
                                     onDismiss()

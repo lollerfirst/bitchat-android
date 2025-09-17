@@ -170,6 +170,7 @@ fun MessageInput(
     selectedPrivatePeer: String?,
     currentChannel: String?,
     nickname: String,
+    onOpenWallet: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -252,7 +253,7 @@ fun MessageInput(
         
         Spacer(modifier = Modifier.width(8.dp)) // Reduced spacing
         
-        // Voice and image buttons when no text (always visible for mesh + channels + private)
+        // Voice and image buttons when no text (always visible for mesh + channels + private) + Wallet button (always visible)
         if (value.text.isEmpty()) {
             // Hold-to-record microphone
             val bg = if (colorScheme.background == Color.Black) Color(0xFF00FF00).copy(alpha = 0.75f) else Color(0xFF008000).copy(alpha = 0.75f)
@@ -313,6 +314,16 @@ fun MessageInput(
                 }
             )
             
+            // Bitcoin (₿) button right after the command button
+            FilledTonalIconButton(
+                onClick = onOpenWallet,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Text(
+                    text = "₿",
+                    textAlign = TextAlign.Center
+                )
+            }
         } else {
             // Send button with enabled/disabled state
             IconButton(

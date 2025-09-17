@@ -71,6 +71,19 @@ class ChatState {
     // Sidebar state
     private val _showSidebar = MutableLiveData(false)
     val showSidebar: LiveData<Boolean> = _showSidebar
+
+    // Wallet P2PK context (sheet visibility and lock target)
+    private val _showWalletSheet = MutableLiveData(false)
+    val showWalletSheet: LiveData<Boolean> = _showWalletSheet
+    private val _pendingCashuLockPubkey = MutableLiveData<String?>(null)
+    private val _pendingCashuLockLabel = MutableLiveData<String?>(null)
+    fun setShowWalletSheet(show: Boolean) { _showWalletSheet.value = show }
+    fun setPendingCashuLockPubkey(pubkeyHex: String?) { _pendingCashuLockPubkey.value = pubkeyHex }
+    fun getPendingCashuLockPubkey(): String? = _pendingCashuLockPubkey.value
+    fun setPendingCashuLockLabel(label: String?) { _pendingCashuLockLabel.value = label }
+    fun getPendingCashuLockLabel(): String? = _pendingCashuLockLabel.value
+    val pendingCashuLockPubkey: LiveData<String?> get() = _pendingCashuLockPubkey
+    val pendingCashuLockLabel: LiveData<String?> get() = _pendingCashuLockLabel
     
     // Command autocomplete
     private val _showCommandSuggestions = MutableLiveData(false)

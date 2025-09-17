@@ -1,4 +1,5 @@
 package com.bitchat.android.ui
+import com.bitchat.android.cashu.CashuActions
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString

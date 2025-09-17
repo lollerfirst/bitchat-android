@@ -166,6 +166,7 @@ private fun SidebarHeader() {
             color = colorScheme.onSurface
         )
         Spacer(modifier = Modifier.weight(1f))
+
     }
 }
 

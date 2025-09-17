@@ -1,7 +1,25 @@
 package com.bitchat.android.ui
 
+import androidx.compose.ui.platform.LocalContext
+import android.util.Log
+
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.ContentCopy
+import com.google.gson.JsonParser
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.draw.clip
+import org.cashudevkit.CurrencyUnit
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,7 +51,8 @@ import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.model.DeliveryStatus
 import com.bitchat.android.mesh.BluetoothMeshService
 import java.text.SimpleDateFormat
-import java.util.*
+import org.cashudevkit.Token
+import java.util.Locale
 import com.bitchat.android.ui.media.VoiceNotePlayer
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -56,11 +75,13 @@ fun MessagesList(
     messages: List<BitchatMessage>,
     currentUserNickname: String,
     meshService: BluetoothMeshService,
+    myNostrPubkeyHex: String?,
     modifier: Modifier = Modifier,
     forceScrollToBottom: Boolean = false,
     onScrolledUpChanged: ((Boolean) -> Unit)? = null,
     onNicknameClick: ((String) -> Unit)? = null,
     onMessageLongPress: ((BitchatMessage) -> Unit)? = null,
+    onReceiveCashuToken: ((String) -> Unit)? = null,
     onCancelTransfer: ((BitchatMessage) -> Unit)? = null,
     onImageClick: ((String, List<String>, Int) -> Unit)? = null
 ) {
@@ -123,8 +144,10 @@ fun MessagesList(
                     messages = messages,
                     currentUserNickname = currentUserNickname,
                     meshService = meshService,
+                    myNostrPubkeyHex = myNostrPubkeyHex,
                     onNicknameClick = onNicknameClick,
                     onMessageLongPress = onMessageLongPress,
+                    onReceiveCashuToken = onReceiveCashuToken,
                     onCancelTransfer = onCancelTransfer,
                     onImageClick = onImageClick
                 )
@@ -132,15 +155,16 @@ fun MessagesList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(
     message: BitchatMessage,
     currentUserNickname: String,
     meshService: BluetoothMeshService,
     messages: List<BitchatMessage> = emptyList(),
+    myNostrPubkeyHex: String?,
     onNicknameClick: ((String) -> Unit)? = null,
     onMessageLongPress: ((BitchatMessage) -> Unit)? = null,
+    onReceiveCashuToken: ((String) -> Unit)? = null,
     onCancelTransfer: ((BitchatMessage) -> Unit)? = null,
     onImageClick: ((String, List<String>, Int) -> Unit)? = null
 ) {
@@ -155,27 +179,138 @@ fun MessageItem(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.Top
+    
+            verticalAlignment = Alignment.Top
             ) {
                 // Provide a small end padding for own private messages so overlay doesn't cover text
                 val endPad = if (message.isPrivate && message.sender == currentUserNickname) 16.dp else 0.dp
-                // Create a custom layout that combines selectable text with clickable nickname areas
-                MessageTextWithClickableNicknames(
-                    message = message,
-                    messages = messages,
-                    currentUserNickname = currentUserNickname,
-                    meshService = meshService,
-                    colorScheme = colorScheme,
-                    timeFormatter = timeFormatter,
-                    onNicknameClick = onNicknameClick,
-                    onMessageLongPress = onMessageLongPress,
-                    onCancelTransfer = onCancelTransfer,
-                    onImageClick = onImageClick,
-                    modifier = Modifier
+                // If content contains a cashu token, show a compact card with a receive icon
+                val tokenRegex = Regex("(cashu[A-Za-z0-9_-]+)")
+                val tokenMatch = tokenRegex.find(message.content)
+                if (tokenMatch != null) {
+                    val token = tokenMatch.value
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Try to decode token to show amount in sats
+                        val tokenStr = token
+                        var previewText = ""
+                        var hasAnyP2PK = false
+                        var isLockedToMe = false
+                        try {
+                            Log.d("TAG_P2PK", "token in message ${message.id.take(6)} from ${message.sender}: decoding for P2PK")
+                            val tkn = Token.decode(tokenStr)
+                            val unit = tkn.unit() ?: CurrencyUnit.Sat
+                            val isSat = unit == CurrencyUnit.Sat
+                            val proofs = tkn.proofsSimple()
+                            Log.d("TAG_P2PK", "decoded token: proofs=${proofs.size}")
+                            val amountULong = tkn.value() 
+                            for ((idx, proof) in proofs.withIndex()) {
+                                //amountULong += proof.amount().value
+                                try {
+                                    val secretStr = proof.secret()
+                                    Log.v("TAG_P2PK", "proof[$idx] amount=${proof.amount().value} secret.len=${secretStr.length}")
+                                    val json = com.google.gson.JsonParser.parseString(secretStr)
+                                    if (json.isJsonArray) {
+                                        val arr = json.asJsonArray
+                                        if (arr.size() >= 2 && arr[0].asString.equals("P2PK", ignoreCase = true)) {
+                                            hasAnyP2PK = true
+                                            val obj = arr[1].asJsonObject
+                                            val data = obj.get("data")?.asString
+                                            Log.d("TAG_P2PK", "proof[$idx] P2PK detected; data.len=${data?.length}")
+                                            if (!data.isNullOrBlank()) {
+                                                val d = data.lowercase()
+                                                val mine = (myNostrPubkeyHex ?: "").lowercase()
+                                                if (mine.isNotBlank()) {
+                                                    val matchExact = d == mine
+                                                    val matchCompressed = (d.length == 66 && mine.length == 64 && d.substring(2) == mine)
+                                                    if (matchExact || matchCompressed) {
+                                                        isLockedToMe = true
+                                                        Log.i("TAG_P2PK", "proof[$idx] LOCKED TO ME: sender=${message.sender} amount=${proof.amount().value}")
+                                                    } else {
+                                                        Log.v("TAG_P2PK", "proof[$idx] P2PK but not to me (mine.len=${mine.length})")
+                                                    }
+                                                } else {
+                                                    Log.v("TAG_P2PK", "no myNostrPubkeyHex available; skipping match")
+                                                }
+                                            }
+                                        } else {
+                                            Log.v("TAG_P2PK", "proof[$idx] secret is JSON array but not P2PK kind")
+                                        }
+                                    } else {
+                                        Log.v("TAG_P2PK", "proof[$idx] secret not JSON array; ignore")
+                                    }
+                                } catch (e: Exception) { Log.w("TAG_P2PK", "failed to parse proof[$idx] secret: ${'$'}{e.message}") }
+                            }
+                            previewText = "${message.sender} sent ${amountULong} ${if (isSat) "sats" else unit.toString().lowercase()}"
+                        } catch (_: Exception) {
+                            previewText = "${message.sender} sent bitcoin"
+                        }
+
+                        if (hasAnyP2PK) {
+                            Icon(
+                                imageVector = Icons.Filled.Lock,
+                                contentDescription = "Locked to you",
+                                tint = when {
+                                    isLockedToMe -> Color(0xFFFF9500)
+                                    else -> colorScheme.onSurface.copy(alpha = 0.75f)
+                                },
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        // Label (after deciding previewText)
+                        Text(
+                            text = previewText,
+                            fontFamily = FontFamily.Monospace,
+                            color = colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+
+                        // Receive (icon-only, compact)
+                        IconButton(onClick = { onReceiveCashuToken?.invoke(token) }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.Download,
+                                contentDescription = "Receive cashu",
+                                tint = Color(0xFF00C851),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Copy token (icon-only, compact)
+                        val clipboard = LocalClipboardManager.current
+                        IconButton(onClick = {
+                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy token",
+                                tint = colorScheme.onSurface.copy(alpha = 0.8f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else {
+                    // Fallback to normal message rendering
+                    MessageTextWithClickableNicknames(
+                        message = message,
+                        messages = messages,
+                        currentUserNickname = currentUserNickname,
+                        meshService = meshService,
+                        colorScheme = colorScheme,
+                        timeFormatter = timeFormatter,
+                        onNicknameClick = onNicknameClick,
+                        onMessageLongPress = onMessageLongPress,
+                        onCancelTransfer = onCancelTransfer,
+                        onImageClick = onImageClick,
+                        modifier = Modifier
                         .weight(1f)
                         .padding(end = endPad)
-                )
+                    )
             }
+}
 
             // Delivery status for private messages (overlay, non-displacing)
             if (message.isPrivate && message.sender == currentUserNickname) {
@@ -190,8 +325,6 @@ fun MessageItem(
                 }
             }
         }
-        
-        // Link previews removed; links are now highlighted inline and clickable within the message text
     }
 }
 

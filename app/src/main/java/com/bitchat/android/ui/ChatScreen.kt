@@ -70,6 +70,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
     var initialViewerIndex by remember { mutableStateOf(0) }
     var forceScrollToBottom by remember { mutableStateOf(false) }
     var isScrolledUp by remember { mutableStateOf(false) }
+    val showWalletSheet by viewModel.showWalletSheet.observeAsState(false)
+    var pendingPrefillToken by remember { mutableStateOf<String?>(null) }
 
     // Show password dialog when needed
     LaunchedEffect(showPasswordPrompt) {
@@ -112,7 +114,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .windowInsetsPadding(WindowInsets.ime) // This handles keyboard insets
                 .windowInsetsPadding(WindowInsets.navigationBars) // Add bottom padding when keyboard is not expanded
         ) {
-            // Header spacer - creates exact space for the floating header (status bar + compact header)
             Spacer(
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.statusBars)
@@ -124,6 +125,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 messages = displayMessages,
                 currentUserNickname = nickname,
                 meshService = viewModel.meshService,
+                myNostrPubkeyHex = try {
+                    val loc = viewModel.selectedLocationChannel.value
+                    if (loc is com.bitchat.android.geohash.ChannelID.Location) {
+                        com.bitchat.android.nostr.NostrIdentityBridge.deriveIdentity(loc.channel.geohash, viewModel.getApplication()).publicKeyHex
+                    } else null
+                } catch (_: Exception) { null },
                 modifier = Modifier.weight(1f),
                 forceScrollToBottom = forceScrollToBottom,
                 onScrolledUpChanged = { isUp -> isScrolledUp = isUp },
@@ -156,8 +163,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     )
                 },
                 onMessageLongPress = { message ->
-                    // Message long press - open user action sheet with message context
-                    // Extract base nickname from message sender (contains all necessary info)
                     val (baseName, _) = splitSuffix(message.sender)
                     selectedUserForSheet = baseName
                     selectedMessageForSheet = message
@@ -170,6 +175,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     viewerImagePaths = allImagePaths
                     initialViewerIndex = initialIndex
                     showFullScreenImageViewer = true
+                },
+                onReceiveCashuToken = { token ->
+                    pendingPrefillToken = token
+                    viewModel.setShowWalletSheet(true)
                 }
             )
             // Input area - stays at bottom
@@ -225,7 +234,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 selectedPrivatePeer = selectedPrivatePeer,
                 currentChannel = currentChannel,
                 nickname = nickname,
-                colorScheme = colorScheme
+                colorScheme = colorScheme,
+                onOpenWallet = { viewModel.setShowWalletSheet(true) }
             )
         }
 
@@ -362,6 +372,19 @@ fun ChatScreen(viewModel: ChatViewModel) {
         selectedMessageForSheet = selectedMessageForSheet,
         viewModel = viewModel
     )
+
+    // Cashu wallet sheet
+    CashuWalletSheet(
+        isPresented = showWalletSheet,
+        onDismiss = {
+            viewModel.setShowWalletSheet(false)
+            pendingPrefillToken = null
+            viewModel.setPendingCashuLockPubkey(null)
+            viewModel.setPendingCashuLockLabel(null)
+        },
+        viewModel = viewModel,
+        prefillToken = pendingPrefillToken
+    )
 }
 
 @Composable
@@ -381,7 +404,8 @@ private fun ChatInputSection(
     selectedPrivatePeer: String?,
     currentChannel: String?,
     nickname: String,
-    colorScheme: ColorScheme
+    colorScheme: ColorScheme,
+    onOpenWallet: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -417,6 +441,7 @@ private fun ChatInputSection(
                 selectedPrivatePeer = selectedPrivatePeer,
                 currentChannel = currentChannel,
                 nickname = nickname,
+                onOpenWallet = onOpenWallet,
                 modifier = Modifier.fillMaxWidth()
             )
         }

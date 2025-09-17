@@ -1,4 +1,6 @@
 package com.bitchat.android.ui
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 import android.app.Application
 import android.util.Log
@@ -113,7 +115,7 @@ class GeohashViewModel(
                     channel = "#${channel.geohash}",
                     powDifficulty = if (pow.enabled) pow.difficulty else null
                 )
-                messageManager.addChannelMessage("geo:${channel.geohash}", localMsg)
+                withContext(Dispatchers.Main) { messageManager.addChannelMessage("geo:${channel.geohash}", localMsg) }
                 val startedMining = pow.enabled && pow.difficulty > 0
                 if (startedMining) {
                     com.bitchat.android.ui.PoWMiningTracker.startMiningMessage(tempId)
@@ -202,6 +204,11 @@ class GeohashViewModel(
     }
 
     fun displayNameForNostrPubkeyUI(pubkeyHex: String): String = repo.displayNameForNostrPubkeyUI(pubkeyHex)
+
+    fun findPubkeyByNickname(targetNickname: String): String? {
+        return repo.findPubkeyByNickname(targetNickname)
+    }
+
 
     fun colorForNostrPubkey(pubkeyHex: String, isDark: Boolean): androidx.compose.ui.graphics.Color {
         val seed = "nostr:${pubkeyHex.lowercase()}"
