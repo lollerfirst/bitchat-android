@@ -1,67 +1,51 @@
 package com.bitchat.android.ui
 
-import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
-
-import com.google.gson.JsonArray
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.ContentCopy
-import com.google.gson.JsonParser
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CircleShape
-
-
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.ui.draw.clip
-import org.cashudevkit.CurrencyUnit
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
- 
-
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import android.content.Intent
-import android.net.Uri
 import com.bitchat.android.model.BitchatMessage
+import com.bitchat.android.model.BitchatMessageType
 import com.bitchat.android.model.DeliveryStatus
 import com.bitchat.android.mesh.BluetoothMeshService
-import java.text.SimpleDateFormat
-import org.cashudevkit.Token
-import java.util.Locale
-import com.bitchat.android.ui.media.VoiceNotePlayer
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.CircleShape
 import com.bitchat.android.ui.media.FileMessageItem
-import com.bitchat.android.model.BitchatMessageType
+import com.google.gson.JsonParser
+import org.cashudevkit.CurrencyUnit
+import org.cashudevkit.Token
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 // VoiceNotePlayer moved to com.bitchat.android.ui.media.VoiceNotePlayer
 
@@ -208,7 +192,7 @@ fun MessageItem(
                             val isSat = unit == CurrencyUnit.Sat
                             val proofs = tkn.proofsSimple()
                             Log.d("TAG_P2PK", "decoded token: proofs=${proofs.size}")
-                            val amountULong = tkn.value() 
+                            val amountULong = tkn.value().value
                             for ((idx, proof) in proofs.withIndex()) {
                                 //amountULong += proof.amount().value
                                 try {
@@ -246,7 +230,7 @@ fun MessageItem(
                                     }
                                 } catch (e: Exception) { Log.w("TAG_P2PK", "failed to parse proof[$idx] secret: ${'$'}{e.message}") }
                             }
-                            previewText = "${message.sender} sent ${amountULong} ${if (isSat) "sats" else unit.toString().lowercase()}"
+                            previewText = "${message.sender} sent ${amountULong} " + if (isSat) "sats" else unit.toString().lowercase()
                         } catch (_: Exception) {
                             previewText = "${message.sender} sent bitcoin"
                         }
